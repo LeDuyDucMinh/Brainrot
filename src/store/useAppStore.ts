@@ -58,6 +58,9 @@ export interface RestrictedApp {
   unlockedUntil: number | null; // Unix timestamp (ms) khi hết hạn unlock
   removalRequestedAt: number | null; // Unix timestamp khi yêu cầu gỡ khỏi danh sách
   isCustom?: boolean;
+  color?: string;
+  bundleId?: string;
+  category?: string;
 }
 
 export interface QuestRecord {
@@ -178,12 +181,18 @@ export const calculateCoinsForMinutes = (minutes: number): number => {
   return Math.max(10, Math.round(minutes * (40 / 30)));
 };
 
+export const calculateMinutesForCoins = (coins: number): number => {
+  if (coins <= 0) return 0;
+  // Tỷ lệ chuẩn: 40 Coins = 30 Phút (1 Coin = 0.75 Phút)
+  return Math.max(1, Math.floor(coins * (30 / 40)));
+};
+
 export const DEFAULT_RESTRICTED_APPS: RestrictedApp[] = [
-  { id: 'tiktok', name: 'TikTok', icon: 'clapperboard', isRestricted: true, unlockedUntil: null, removalRequestedAt: null },
-  { id: 'facebook', name: 'Facebook', icon: 'facebook', isRestricted: true, unlockedUntil: null, removalRequestedAt: null },
-  { id: 'instagram', name: 'Instagram', icon: 'instagram', isRestricted: true, unlockedUntil: null, removalRequestedAt: null },
-  { id: 'youtube', name: 'YouTube', icon: 'youtube', isRestricted: true, unlockedUntil: null, removalRequestedAt: null },
-  { id: 'threads', name: 'Threads', icon: 'at-sign', isRestricted: false, unlockedUntil: null, removalRequestedAt: null },
+  { id: 'tiktok', name: 'TikTok', icon: 'clapperboard', isRestricted: true, unlockedUntil: null, removalRequestedAt: null, color: '#FE2C55', bundleId: 'com.zhiliaoapp.musically', category: 'social' },
+  { id: 'facebook', name: 'Facebook', icon: 'facebook', isRestricted: true, unlockedUntil: null, removalRequestedAt: null, color: '#1877F2', bundleId: 'com.facebook.Facebook', category: 'social' },
+  { id: 'instagram', name: 'Instagram', icon: 'instagram', isRestricted: true, unlockedUntil: null, removalRequestedAt: null, color: '#E1306C', bundleId: 'com.burbn.instagram', category: 'social' },
+  { id: 'youtube', name: 'YouTube', icon: 'youtube', isRestricted: true, unlockedUntil: null, removalRequestedAt: null, color: '#FF0000', bundleId: 'com.google.ios.youtube', category: 'social' },
+  { id: 'threads', name: 'Threads', icon: 'at-sign', isRestricted: true, unlockedUntil: null, removalRequestedAt: null, color: '#10B981', bundleId: 'com.burbn.threads', category: 'social' },
 ];
 
 export const DEFAULT_GYM_EXERCISES: GymExercise[] = [
@@ -250,6 +259,9 @@ interface AppState {
   socialMediaUsedMinutes: number;
   brainHP: number;
   brainHealthBonus: number;
+  lastUnlockTick: number | null;
+  screenTimePermissionGranted: boolean;
+  setScreenTimePermission: (granted: boolean) => void;
   addSocialMediaMinutes: (minutes: number) => void;
   setSocialMediaMinutes: (minutes: number) => void;
   restoreBrainHealth: (percent: number) => void;
@@ -265,7 +277,10 @@ interface AppState {
 
   // --- Actions: App Management ---
   toggleAppRestriction: (appId: string) => boolean;
-  addCustomApp: (name: string, icon?: string) => boolean;
+  addCustomApp: (
+    app: { name: string; id?: string; icon?: string; color?: string; bundleId?: string; category?: string } | string,
+    icon?: string
+  ) => boolean;
   deleteRestrictedApp: (appId: string) => boolean;
   cancelRemovalRequest: (appId: string) => void;
   purchaseUnlock: (appId: string, pkg: TimePackage) => boolean;
@@ -361,6 +376,13 @@ export const useAppStore = create<AppState>()(
       socialMediaUsedMinutes: 0, // Bắt đầu ngày mới với 0 phút MXH
       brainHP: 100, // Khởi điểm 100 HP Sinh Lực Não trọn vẹn
       brainHealthBonus: 0,
+      lastUnlockTick: null,
+      screenTimePermissionGranted: false,
+
+      setScreenTimePermission: (granted: boolean) => {
+        set({ screenTimePermissionGranted: granted });
+        hapticService.light();
+      },
 
       addSocialMediaMinutes: (minutes: number) => {
         set((s) => {
@@ -507,14 +529,9 @@ export const useAppStore = create<AppState>()(
         set((state) => {
           const newCoins = state.coins + amount;
           const newLifetime = state.totalLifetimeCoins + amount;
-          // Cơ chế: Nhận 10 Coins = +5 HP phục hồi sinh lực cho não
-          const healHP = Math.max(1, Math.round((amount / 10) * 5));
-          const currentHP = state.brainHP !== undefined ? state.brainHP : Math.max(0, 100 - state.socialMediaUsedMinutes);
           return {
             coins: newCoins,
             totalLifetimeCoins: newLifetime,
-            brainHP: Math.min(100, currentHP + healHP),
-            brainHealthBonus: Math.min(100, state.brainHealthBonus + healHP),
             dailyStats: {
               ...state.dailyStats,
               coinsEarned: state.dailyStats.coinsEarned + amount,
@@ -661,19 +678,62 @@ export const useAppStore = create<AppState>()(
         }
       },
 
-      addCustomApp: (name: string, icon = 'smartphone'): boolean => {
-        const trimmed = name.trim();
-        if (!trimmed) return false;
-        const id = `custom-${Date.now()}`;
+      addCustomApp: (
+        appData: { name: string; id?: string; icon?: string; color?: string; bundleId?: string; category?: string } | string,
+        fallbackIcon = 'smartphone'
+      ): boolean => {
+        let name = '';
+        let icon = fallbackIcon;
+        let id = `custom-${Date.now()}`;
+        let color: string | undefined = undefined;
+        let bundleId: string | undefined = undefined;
+        let category: string | undefined = undefined;
+
+        if (typeof appData === 'string') {
+          name = appData.trim();
+        } else {
+          name = appData.name.trim();
+          if (appData.icon) icon = appData.icon;
+          if (appData.id) id = appData.id;
+          if (appData.color) color = appData.color;
+          if (appData.bundleId) bundleId = appData.bundleId;
+          if (appData.category) category = appData.category;
+        }
+
+        if (!name) return false;
+
+        const state = get();
+        // Kiểm tra xem app đã có trong danh sách chưa (tránh trùng lặp hoa/thường hoặc sai chính tả lặp lại)
+        const existingApp = state.restrictedApps.find(
+          (a) => a.id === id || a.name.toLowerCase() === name.toLowerCase()
+        );
+
+        if (existingApp) {
+          // Nếu đã tồn tại nhưng đang mở khóa -> bật lại chế độ khóa
+          set((s) => ({
+            restrictedApps: s.restrictedApps.map((a) =>
+              a.id === existingApp.id
+                ? { ...a, isRestricted: true, unlockedUntil: null, removalRequestedAt: null }
+                : a
+            ),
+          }));
+          hapticService.success();
+          return true;
+        }
+
         const newApp: RestrictedApp = {
           id,
-          name: trimmed,
+          name,
           icon,
           isRestricted: true,
           unlockedUntil: null,
           removalRequestedAt: null,
           isCustom: true,
+          color,
+          bundleId,
+          category,
         };
+
         set((s) => ({
           restrictedApps: [...s.restrictedApps, newApp],
         }));
@@ -751,19 +811,28 @@ export const useAppStore = create<AppState>()(
             ...s.dailyStats,
             totalUnlockMinutes: s.dailyStats.totalUnlockMinutes + pkg.durationMinutes,
           },
-          // Đổi thời gian lướt MXH -> cộng vào thời gian MXH dùng
-          socialMediaUsedMinutes: s.socialMediaUsedMinutes + pkg.durationMinutes,
+          // Ghi nhận mốc bắt đầu tính thời gian mở khóa (nếu chưa có)
+          lastUnlockTick: s.lastUnlockTick ?? now,
         }));
         hapticService.success();
         return true;
       },
 
       lockAppImmediately: (appId: string) => {
-        set((s) => ({
-          restrictedApps: s.restrictedApps.map((a) =>
+        // Cập nhật phút đã trôi qua trước khi khóa
+        get().checkAndExpireUnlocks();
+        set((s) => {
+          const updatedApps = s.restrictedApps.map((a) =>
             a.id === appId ? { ...a, unlockedUntil: null } : a
-          ),
-        }));
+          );
+          const hasAnyActiveUnlock = updatedApps.some(
+            (a) => a.isRestricted && a.unlockedUntil && a.unlockedUntil > Date.now()
+          );
+          return {
+            restrictedApps: updatedApps,
+            lastUnlockTick: hasAnyActiveUnlock ? s.lastUnlockTick : null,
+          };
+        });
         hapticService.heavy();
       },
 
@@ -798,7 +867,45 @@ export const useAppStore = create<AppState>()(
         const now = Date.now();
         let changed = false;
 
-        const updatedApps = state.restrictedApps.map((a) => {
+        const apps = state.restrictedApps;
+        const activeOrRecentlyExpiredApps = apps.filter(
+          (a) => a.isRestricted && a.unlockedUntil !== null
+        );
+
+        let newSocialMinutes = state.socialMediaUsedMinutes;
+        let newBrainHP = state.brainHP !== undefined ? state.brainHP : 100;
+        let newLastUnlockTick = state.lastUnlockTick;
+
+        // Cơ chế: Tính thời gian não thối bằng thời gian mở khóa đã dùng, cứ hết 1 phút trôi qua mất 1 HP
+        if (activeOrRecentlyExpiredApps.length > 0) {
+          const maxUnlockUntil = Math.max(
+            ...activeOrRecentlyExpiredApps.map((a) => a.unlockedUntil!)
+          );
+
+          if (state.lastUnlockTick !== null) {
+            const effectiveEnd = Math.min(now, maxUnlockUntil);
+            if (effectiveEnd > state.lastUnlockTick) {
+              const elapsedMs = effectiveEnd - state.lastUnlockTick;
+              const minutesPassed = Math.floor(elapsedMs / 60000);
+
+              if (minutesPassed > 0) {
+                newSocialMinutes += minutesPassed;
+                newBrainHP = Math.max(0, newBrainHP - minutesPassed);
+                newLastUnlockTick = state.lastUnlockTick + minutesPassed * 60000;
+                changed = true;
+              }
+            }
+          } else {
+            const anyActive = activeOrRecentlyExpiredApps.some((a) => a.unlockedUntil! > now);
+            if (anyActive) {
+              newLastUnlockTick = now;
+              changed = true;
+            }
+          }
+        }
+
+        // Khóa lại các ứng dụng đã hết hạn thời gian
+        const updatedApps = apps.map((a) => {
           if (a.unlockedUntil && a.unlockedUntil <= now) {
             changed = true;
             return { ...a, unlockedUntil: null };
@@ -806,9 +913,26 @@ export const useAppStore = create<AppState>()(
           return a;
         });
 
+        // Nếu tất cả các ứng dụng đều đã hết hạn mở khóa
+        const hasAnyActiveUnlock = updatedApps.some(
+          (a) => a.isRestricted && a.unlockedUntil && a.unlockedUntil > now
+        );
+        if (!hasAnyActiveUnlock && newLastUnlockTick !== null) {
+          newLastUnlockTick = null;
+          changed = true;
+        }
+
         if (changed) {
-          set({ restrictedApps: updatedApps });
-          hapticService.heavy();
+          set({
+            restrictedApps: updatedApps,
+            socialMediaUsedMinutes: newSocialMinutes,
+            brainHP: newBrainHP,
+            lastUnlockTick: newLastUnlockTick,
+          });
+          const justLocked = apps.some((a, idx) => a.unlockedUntil !== null && updatedApps[idx].unlockedUntil === null);
+          if (justLocked) {
+            hapticService.heavy();
+          }
         }
       },
 
@@ -953,13 +1077,11 @@ export const useAppStore = create<AppState>()(
         if (!state.unlockedAchievements.includes(achievementId)) return false;
         if (state.claimedAchievements.includes(achievementId)) return false;
 
-        const healHP = Math.max(1, Math.round((ach.rewardCoins / 10) * 5));
+        // Lưu ý: Nhận Coins từ Thành tựu KHÔNG được cộng HP! (Chỉ làm nhiệm vụ có Coins mới được cộng HP)
         set((s) => ({
           coins: s.coins + ach.rewardCoins,
           totalLifetimeCoins: s.totalLifetimeCoins + ach.rewardCoins,
           claimedAchievements: [...s.claimedAchievements, achievementId],
-          brainHP: Math.min(100, (s.brainHP ?? (100 - s.socialMediaUsedMinutes)) + healHP),
-          brainHealthBonus: Math.min(100, s.brainHealthBonus + healHP),
         }));
         hapticService.success();
         return true;
@@ -1024,6 +1146,7 @@ export const useAppStore = create<AppState>()(
         settings: state.settings,
         socialMediaUsedMinutes: state.socialMediaUsedMinutes,
         brainHP: state.brainHP,
+        screenTimePermissionGranted: state.screenTimePermissionGranted,
       }),
     }
   )

@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 90,
   },
   tipBox: {
     flexDirection: 'row',

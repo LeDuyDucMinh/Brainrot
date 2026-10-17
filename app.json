@@ -9,8 +9,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.earnyourtime.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Ứng dụng cần Camera để AI theo dõi và đếm chuyển động hít đất chống gian lận."
+      },
+      "entitlements": {
+        "com.apple.developer.family-controls": true
       }
     },
     "android": {
@@ -36,7 +40,8 @@
         {
           "cameraPermission": "Ứng dụng cần Camera để AI theo dõi và đếm chuyển động hít đất chống gian lận."
         }
-      ]
+      ],
+      "./plugins/withIosScreenTime"
     ]
   }
 }

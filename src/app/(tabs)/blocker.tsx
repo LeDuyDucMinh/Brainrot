@@ -27,6 +27,7 @@ import {
   X,
   LockKeyhole,
   Sliders,
+  Smartphone,
 } from 'lucide-react-native';
 import {
   useAppStore,
@@ -36,7 +37,11 @@ import {
   RestrictedApp,
   TimePackage,
   calculateCoinsForMinutes,
+  calculateMinutesForCoins,
 } from '../../store/useAppStore';
+import { AddAppModal } from '../../components/AddAppModal';
+import { CatalogApp } from '../../data/appCatalog';
+import { screenTimeService } from '../../services/ScreenTimeService';
 import { hapticService } from '../../utils/haptics';
 import { lightTheme, darkTheme } from '../../theme/colors';
 
@@ -52,6 +57,8 @@ export default function BlockerAndShopScreen() {
     lockAppImmediately,
     checkAndExpireUnlocks,
     themeMode,
+    screenTimePermissionGranted,
+    setScreenTimePermission,
   } = useAppStore();
 
   const colors = themeMode === 'light' ? lightTheme : darkTheme;
@@ -62,12 +69,11 @@ export default function BlockerAndShopScreen() {
   );
   const [purchaseFeedback, setPurchaseFeedback] = useState<string | null>(null);
 
-  // Modal thêm app mới
+  // Modal thông minh thêm app mới
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [customAppName, setCustomAppName] = useState('');
 
-  // Custom minutes exchange
-  const [customMinutes, setCustomMinutes] = useState('20');
+  // Custom coins exchange (đổi từ Coins sang Phút)
+  const [customCoins, setCustomCoins] = useState('40');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -197,29 +203,41 @@ export default function BlockerAndShopScreen() {
   };
 
   const handleCustomBuy = () => {
-    const mins = parseInt(customMinutes) || 0;
-    if (mins <= 0) {
-      Alert.alert('Lỗi', 'Vui lòng nhập số phút hợp lệ.');
+    const coinAmt = parseInt(customCoins) || 0;
+    if (coinAmt <= 0) {
+      Alert.alert('Lỗi', 'Vui lòng nhập số Coins hợp lệ.');
       return;
     }
-    const cost = calculateCoinsForMinutes(mins);
+    const mins = calculateMinutesForCoins(coinAmt);
+    if (mins <= 0) {
+      Alert.alert('Lỗi', 'Số Coins phải từ 2 trở lên để đổi tối thiểu 1 phút sử dụng.');
+      return;
+    }
     const customPkg: TimePackage = {
-      id: `custom-pkg-${mins}`,
+      id: `custom-pkg-c${coinAmt}`,
       label: `${mins} phút`,
       durationMinutes: mins,
-      costCoins: cost,
+      costCoins: coinAmt,
     };
     handleBuyPackage(customPkg);
   };
 
-  const handleAddCustomApp = () => {
-    if (!customAppName.trim()) {
-      Alert.alert('Lỗi', 'Vui lòng nhập tên ứng dụng.');
-      return;
-    }
-    addCustomApp(customAppName);
-    setCustomAppName('');
+  const handleAddAppFromCatalog = (app: CatalogApp | { name: string; category?: string; icon?: string; color?: string }) => {
+    addCustomApp(app);
     setAddModalVisible(false);
+  };
+
+  const handleRequestScreenTime = async () => {
+    const res = await screenTimeService.requestScreenTimeAuthorization();
+    if (res.success) {
+      setScreenTimePermission(true);
+      Alert.alert(
+        'Đã Cấp Quyền Thành Công',
+        'Ứng dụng đã được kết nối trực tiếp với Apple Screen Time API. Hệ thống sẽ theo dõi thời gian các ứng dụng trong danh sách này và trừ HP trí não theo thời gian thực (1 phút = -1 HP).'
+      );
+    } else {
+      Alert.alert('Chưa thể cấp quyền', res.message);
+    }
   };
 
   const handleDeleteApp = (app: RestrictedApp) => {
@@ -273,6 +291,61 @@ export default function BlockerAndShopScreen() {
           </Text>
         </View>
 
+        {/* Section: Kết Nối Screen Time iOS */}
+        <View style={[styles.screenTimeCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View style={styles.screenTimeHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Smartphone size={18} color={screenTimePermissionGranted ? colors.primary : colors.warning} />
+              <Text style={[styles.screenTimeTitle, { color: colors.text }]}>THEO DÕI SCREEN TIME (iOS)</Text>
+            </View>
+            <View
+              style={[
+                styles.screenTimeBadge,
+                {
+                  backgroundColor: screenTimePermissionGranted ? colors.primaryLight : colors.warningLight,
+                  borderColor: screenTimePermissionGranted ? colors.primaryBorder : colors.warningBorder,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.screenTimeBadgeText,
+                  { color: screenTimePermissionGranted ? colors.primary : colors.warning },
+                ]}
+              >
+                {screenTimePermissionGranted ? 'ĐANG THEO DÕI' : 'CHƯA CẤP QUYỀN'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.screenTimeDesc, { color: colors.textSubtle }]}>
+            Hệ thống chỉ theo dõi thời gian của{' '}
+            <Text style={{ fontWeight: '800', color: colors.text }}>
+              {restrictedApps.filter((a) => a.isRestricted).length} ứng dụng
+            </Text>{' '}
+            trong danh sách bên dưới. Mỗi phút dùng sẽ trừ 1 HP sinh lực não. Qua 00:00 ngày mới, sinh lực tự động hồi 100 HP.
+          </Text>
+
+          <View style={styles.screenTimeActionsRow}>
+            {!screenTimePermissionGranted ? (
+              <TouchableOpacity
+                style={[styles.requestPermBtn, { backgroundColor: colors.primary }]}
+                onPress={handleRequestScreenTime}
+              >
+                <ShieldCheck size={16} color="#FFFFFF" />
+                <Text style={styles.requestPermBtnText}>Xin Quyền Screen Time iOS</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.screenTimeStatusRow, { backgroundColor: colors.primaryLight, borderColor: colors.primaryBorder }]}>
+                <CheckCircle2 size={16} color={colors.primary} />
+                <Text style={[styles.screenTimeStatusText, { color: colors.primary }]}>
+                  Đang đồng bộ trực tiếp thời gian thực với iOS
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Section: Đang mở khóa (Active Unlocks) */}
         {activeUnlocks.length > 0 && (
           <View style={styles.section}>
@@ -324,6 +397,11 @@ export default function BlockerAndShopScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Lock size={18} color={colors.danger} />
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Danh Sách Ứng Dụng</Text>
+              <View style={[styles.monitoredCountBadge, { backgroundColor: colors.bgSubtle }]}>
+                <Text style={[styles.monitoredCountText, { color: colors.textSubtle }]}>
+                  {restrictedApps.filter((a) => a.isRestricted).length} theo dõi
+                </Text>
+              </View>
             </View>
 
             <TouchableOpacity
@@ -344,7 +422,15 @@ export default function BlockerAndShopScreen() {
               return (
                 <View key={app.id} style={[styles.appRow, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                   <View style={styles.appLeft}>
-                    {app.isRestricted ? (
+                    {app.color ? (
+                      <View style={[styles.appColorCircle, { backgroundColor: app.color + '22' }]}>
+                        {app.isRestricted ? (
+                          <Lock size={16} color={app.color} />
+                        ) : (
+                          <Unlock size={16} color={colors.textSubtle} />
+                        )}
+                      </View>
+                    ) : app.isRestricted ? (
                       <Lock size={18} color={colors.danger} />
                     ) : (
                       <Unlock size={18} color={colors.textSubtle} />
@@ -352,7 +438,14 @@ export default function BlockerAndShopScreen() {
                     <View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[styles.appName, { color: colors.text }]}>{app.name}</Text>
-                        {app.isCustom && (
+                        {app.category && (
+                          <View style={[styles.customBadge, { backgroundColor: colors.bgSubtle }]}>
+                            <Text style={[styles.customBadgeText, { color: colors.textMuted }]}>
+                              {app.category}
+                            </Text>
+                          </View>
+                        )}
+                        {app.isCustom && !app.category && (
                           <View style={[styles.customBadge, { backgroundColor: colors.bgSubtle }]}>
                             <Text style={[styles.customBadgeText, { color: colors.textMuted }]}>Tùy chỉnh</Text>
                           </View>
@@ -516,88 +609,77 @@ export default function BlockerAndShopScreen() {
             })}
           </View>
 
-          {/* Custom Duration Calculator */}
+          {/* Custom Duration Calculator: Đổi từ Coins sang Phút */}
           <View style={[styles.customCalcBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <Sliders size={16} color={colors.primary} />
-              <Text style={[styles.customCalcTitle, { color: colors.text }]}>Đổi thời gian tùy chọn</Text>
+              <Text style={[styles.customCalcTitle, { color: colors.text }]}>Đổi Coins sang Phút sử dụng</Text>
             </View>
             <View style={styles.customCalcRow}>
-              <TextInput
-                style={[styles.customInput, { backgroundColor: colors.bgSubtle, color: colors.text, borderColor: colors.cardBorder }]}
-                value={customMinutes}
-                onChangeText={setCustomMinutes}
-                keyboardType="numeric"
-                placeholder="Số phút"
-                placeholderTextColor={colors.textSubtle}
-              />
+              <View style={[styles.customInputWrapper, { backgroundColor: colors.bgSubtle, borderColor: colors.cardBorder }]}>
+                <Coins size={14} color={colors.warning} />
+                <TextInput
+                  style={[styles.customInput, { color: colors.text }]}
+                  value={customCoins}
+                  onChangeText={setCustomCoins}
+                  keyboardType="numeric"
+                  placeholder="Coins"
+                  placeholderTextColor={colors.textSubtle}
+                />
+              </View>
               <View style={styles.customCalcCostBox}>
-                <Coins size={15} color={colors.warning} />
-                <Text style={[styles.customCalcCostText, { color: colors.warning }]}>
-                  {calculateCoinsForMinutes(parseInt(customMinutes) || 0)} Coins
+                <Clock size={15} color={colors.primary} />
+                <Text style={[styles.customCalcCostText, { color: colors.primary }]}>
+                  = {calculateMinutesForCoins(parseInt(customCoins) || 0)} phút
                 </Text>
               </View>
               <TouchableOpacity
                 style={[
                   styles.customBuyBtn,
-                  { backgroundColor: coins >= calculateCoinsForMinutes(parseInt(customMinutes) || 0) ? colors.primary : colors.bgSubtle },
+                  {
+                    backgroundColor:
+                      (parseInt(customCoins) || 0) > 0 &&
+                      coins >= (parseInt(customCoins) || 0) &&
+                      calculateMinutesForCoins(parseInt(customCoins) || 0) > 0
+                        ? colors.primary
+                        : colors.bgSubtle,
+                  },
                 ]}
-                disabled={coins < calculateCoinsForMinutes(parseInt(customMinutes) || 0)}
+                disabled={
+                  (parseInt(customCoins) || 0) <= 0 ||
+                  coins < (parseInt(customCoins) || 0) ||
+                  calculateMinutesForCoins(parseInt(customCoins) || 0) <= 0
+                }
                 onPress={handleCustomBuy}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>Đổi</Text>
+                <Text
+                  style={{
+                    color:
+                      (parseInt(customCoins) || 0) > 0 &&
+                      coins >= (parseInt(customCoins) || 0) &&
+                      calculateMinutesForCoins(parseInt(customCoins) || 0) > 0
+                        ? '#FFFFFF'
+                        : colors.textSubtle,
+                    fontWeight: '800',
+                    fontSize: 12,
+                  }}
+                >
+                  Đổi
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </ScrollView>
 
-      {/* Modal Thêm App Mới */}
-      <Modal
+      {/* Modal Thông Minh Chọn & Thêm App */}
+      <AddAppModal
         visible={addModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAddModalVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Thêm Ứng Dụng Cần Khóa</Text>
-              <TouchableOpacity onPress={() => setAddModalVisible(false)}>
-                <X size={20} color={colors.textSubtle} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-              Ứng dụng sẽ tự động rơi vào cơ chế Hard-Lock và cần Coins để mở.
-            </Text>
-
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.bgSubtle, color: colors.text, borderColor: colors.cardBorder }]}
-              placeholder="Tên ứng dụng (vd: Shopee, Tinder...)"
-              placeholderTextColor={colors.textSubtle}
-              value={customAppName}
-              onChangeText={setCustomAppName}
-              autoFocus
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalCancel, { backgroundColor: colors.bgSubtle }]}
-                onPress={() => setAddModalVisible(false)}
-              >
-                <Text style={{ color: colors.textMuted, fontWeight: '700' }}>Hủy</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirm, { backgroundColor: colors.primary }]}
-                onPress={handleAddCustomApp}
-              >
-                <Text style={styles.modalConfirmText}>Khóa Ngay</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setAddModalVisible(false)}
+        onAddApp={handleAddAppFromCatalog}
+        restrictedApps={restrictedApps}
+        colors={colors}
+      />
     </SafeAreaView>
   );
 }
@@ -643,7 +725,83 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 90,
+  },
+  screenTimeCard: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  screenTimeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  screenTimeTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  screenTimeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  screenTimeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  screenTimeDesc: {
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  screenTimeActionsRow: {
+    marginTop: 4,
+  },
+  requestPermBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  requestPermBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  screenTimeStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  screenTimeStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  monitoredCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  monitoredCountText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  appColorCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   ruleNotice: {
     flexDirection: 'row',
@@ -911,14 +1069,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  customInput: {
-    width: 80,
+  customInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
     height: 40,
     borderRadius: 10,
     borderWidth: 1,
-    textAlign: 'center',
+  },
+  customInput: {
+    width: 65,
+    height: 40,
     fontSize: 14,
     fontWeight: '700',
+    padding: 0,
   },
   customCalcCostBox: {
     flexDirection: 'row',

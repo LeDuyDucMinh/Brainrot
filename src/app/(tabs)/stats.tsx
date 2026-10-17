@@ -55,7 +55,6 @@ export default function StatsAndSettingsScreen() {
     dailyStats,
     settings,
     updateSettings,
-    resetAllData,
     getUserRank,
     themeMode,
     toggleTheme,
@@ -129,24 +128,6 @@ export default function StatsAndSettingsScreen() {
       case 'award': return <Award size={size} color={color} />;
       default: return <Coins size={size} color={color} />;
     }
-  };
-
-  const handleResetData = () => {
-    Alert.alert(
-      '⚠️ Đặt Lại Toàn Bộ Dữ Liệu',
-      'Thao tác này sẽ xóa toàn bộ số Coins, lịch sử nhiệm vụ, thành tựu và thiết lập app về trạng thái ban đầu. Bạn có chắc chắn không?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        {
-          text: 'Đặt Lại Toàn Bộ',
-          style: 'destructive',
-          onPress: () => {
-            resetAllData();
-            Alert.alert('Thành công', 'Đã đặt lại dữ liệu ứng dụng.');
-          },
-        },
-      ]
-    );
   };
 
   return (
@@ -496,7 +477,7 @@ export default function StatsAndSettingsScreen() {
                 ) : (
                   <Moon size={18} color="#94A3B8" />
                 )}
-                <View>
+                <View style={styles.settingTextContainer}>
                   <Text style={[styles.settingName, { color: colors.text }]}>Giao diện sáng màu (Light Mode)</Text>
                   <Text style={[styles.settingSub, { color: colors.textSubtle }]}>
                     {themeMode === 'light' ? 'Đang bật nền trắng sáng sủa, sắc nét' : 'Đang bật nền tối'}
@@ -517,7 +498,7 @@ export default function StatsAndSettingsScreen() {
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
                 <ShieldCheck size={18} color={colors.secondary} />
-                <View>
+                <View style={styles.settingTextContainer}>
                   <Text style={[styles.settingName, { color: colors.text }]}>Cho phép tắt màn hình khi Deep Work</Text>
                   <Text style={[styles.settingSub, { color: colors.textSubtle }]}>
                     Khóa điện thoại làm việc thoải mái, chỉ hủy khi chuyển app
@@ -541,7 +522,7 @@ export default function StatsAndSettingsScreen() {
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
                 <Zap size={18} color={colors.primary} />
-                <View>
+                <View style={styles.settingTextContainer}>
                   <Text style={[styles.settingName, { color: colors.text }]}>Rung phản hồi (Haptics)</Text>
                   <Text style={[styles.settingSub, { color: colors.textSubtle }]}>Rung xúc giác khi hít đất và bấm nút</Text>
                 </View>
@@ -556,17 +537,6 @@ export default function StatsAndSettingsScreen() {
                 thumbColor="#FFFFFF"
               />
             </View>
-
-            <View style={[styles.settingDivider, { backgroundColor: colors.cardBorder }]} />
-
-            {/* Reset Data */}
-            <TouchableOpacity style={styles.resetRow} onPress={handleResetData}>
-              <View style={styles.settingLeft}>
-                <RotateCcw size={18} color={colors.danger} />
-                <Text style={[styles.resetText, { color: colors.danger }]}>Đặt lại toàn bộ dữ liệu ứng dụng</Text>
-              </View>
-              <ChevronRight size={18} color={colors.danger} />
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -615,7 +585,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 90,
   },
   rankCard: {
     borderRadius: 18,
@@ -996,35 +966,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
+    gap: 10,
   },
   settingLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
-    marginRight: 10,
+  },
+  settingTextContainer: {
+    flex: 1,
+    paddingRight: 6,
   },
   settingName: {
     fontSize: 13,
     fontWeight: '700',
+    lineHeight: 18,
   },
   settingSub: {
     fontSize: 11,
     marginTop: 2,
+    lineHeight: 15,
   },
   settingDivider: {
     height: 1,
     marginVertical: 4,
-  },
-  resetRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  resetText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

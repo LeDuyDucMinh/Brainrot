@@ -119,7 +119,7 @@ export const BrainHealthWidget: React.FC = () => {
         <View style={styles.hpPromptRow}>
           <Sparkles size={13} color="#EF4444" />
           <Text style={[styles.hpPromptText, { color: colors.textSubtle }]}>
-            1 phút xem MXH = -1 HP · Nhận 10 Coins = +5 HP phục hồi sinh lực não!
+            1 phút xem MXH = -1 HP · Làm nhiệm vụ nhận 10 Coins = +5 HP · Reset 100 HP lúc 00:00
           </Text>
         </View>
       </View>
