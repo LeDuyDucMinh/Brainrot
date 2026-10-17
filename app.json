@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "EarnYourTime",
+    "slug": "EarnYourTime",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "earnyourtime",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Ứng dụng cần Camera để AI theo dõi và đếm chuyển động hít đất chống gian lận."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F8FAFC",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ứng dụng cần Camera để AI theo dõi và đếm chuyển động hít đất chống gian lận."
+        }
+      ]
+    ]
+  }
+}
